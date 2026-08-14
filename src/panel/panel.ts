@@ -212,6 +212,15 @@ export class ClientPanel {
       return;
     }
 
+    if (this.state.bundle.sample) {
+      this.container.appendChild(
+        this.notice(
+          "warning",
+          "Sample data, not a delivery",
+          "These layers are placeholders used to demonstrate the viewer. The disturbance shown is invented and must not be read, cited or reported.",
+        ),
+      );
+    }
     this.container.appendChild(this.renderAssessment(this.state.bundle));
     this.container.appendChild(this.renderLayers(this.state.bundle));
     this.container.appendChild(this.renderSiteData());

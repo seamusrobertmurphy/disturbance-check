@@ -1,0 +1,238 @@
+name: Build and deploy
+
+# Builds the plugin, drops it into a pinned GeoLibre checkout as a bundled
+# plugin, builds the GeoLibre web app, and publishes the result to GitHub Pages.
+#
+# No secrets are involved. The plugin reads open imagery from public endpoints
+# that answer anonymous requests, so there is no client ID to inject and no
+# credential that could leak into the published bundle.
+#
+# GeoLibre is never vendored into this repository. It is checked out here at a
+# pinned tag so a deploy is reproducible and an upstream change cannot alter
+# what colleagues see without a deliberate bump to GEOLIBRE_REF.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  GEOLIBRE_REF: v1.9.0
+  PLUGIN_ID: tuvsud-disturbance-check
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the plugin
+        working-directory: plugin
+        run: |
+          npm ci
+          npm run build
+          npm test
+
+      - name: Check out GeoLibre
+        uses: actions/checkout@v4
+        with:
+          repository: opengeos/GeoLibre
+          ref: ${{ env.GEOLIBRE_REF }}
+          path: geolibre
+
+      - name: Drop the plugin into the GeoLibre build
+        run: |
+          target="geolibre/apps/geolibre-desktop/public/plugins/${PLUGIN_ID}"
+          mkdir -p "$target/dist"
+          cp plugin/plugin.json "$target/plugin.json"
+          cp plugin/dist/index.js "$target/dist/index.js"
+          cp plugin/dist/style.css "$target/dist/style.css"
+          ls -la "$target" "$target/dist"
+
+          # The delivered bundle is served from the site root, because the
+          # panel resolves manifest.json against the page rather than against
+          # the plugin.
+          if [ -d plugin/public/bundle ]; then
+            cp -R plugin/public/bundle geolibre/apps/geolibre-desktop/public/bundle
+            echo "Bundle staged:"; ls -la plugin/public/bundle
+          else
+            echo "No bundle in public/bundle; the viewer will report that it carries no layers."
+          fi
+
+      - name: Build the GeoLibre web app
+        working-directory: geolibre
+        env:
+          # GitHub Pages serves this project from a subpath, so the app must be
+          # built with a matching base or every asset URL 404s.
+          GEOLIBRE_APP_BASE: /${{ github.event.repository.name }}/
+        run: |
+          npm ci
+          npm run build
+
+      - name: Fail if the plugin did not make it into the build output
+        run: |
+          out="geolibre/apps/geolibre-desktop/dist/plugins/${PLUGIN_ID}/dist/index.js"
+          if [ ! -f "$out" ]; then
+            echo "The plugin bundle is missing from the build output at $out"
+            exit 1
+          fi
+          echo "Plugin present: $(du -h "$out" | cut -f1)"
+
+      # Two things every colleague should get without touching a control.
+      #
+      # Theme: GeoLibre reads ?theme= first and the operating system preference
+      # second, and persists nothing. Verifiers read classified rasters against
+      # the map all day, so the deployment defaults to dark rather than
+      # inheriting whatever each laptop is set to.
+      #
+      # Activation: a plugin dropped into public/plugins is always *loaded*,
+      # but loading is not activating, and v1.9.0 refuses activeByDefault on
+      # external plugins outright ("External plugins cannot use
+      # activeByDefault"). Until now that left every visitor to find the
+      # Plugins menu themselves, and a colleague who cleared their site data
+      # silently lost the panel with no way of knowing why.
+      #
+      # A project file is the supported route: GeoLibre loads one from ?project=
+      # and honours its plugins.activePluginIds. So the deploy ships a minimal
+      # startup project that switches this plugin on, and the snippet points at
+      # it when the visitor asked for no other project.
+      #
+      # Both are defaults, not impositions. An explicit ?theme=light or
+      # ?project=... still wins, and the in-app controls are untouched.
+      - name: Open dark, with the plugin already switched on
+        env:
+          # The published origin, so URLs written into the startup project are
+          # absolute. A relative basemap URL would be resolved against whatever
+          # the caller passed as ?project=, which is not necessarily this site.
+          PAGES_ORIGIN: https://${{ github.repository_owner }}.github.io
+          PAGES_BASE: /${{ github.event.repository.name }}/
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+
+          dist = Path("geolibre/apps/geolibre-desktop/dist")
+          plugin_id = "tuvsud-disturbance-check"
+          site = os.environ["PAGES_ORIGIN"].rstrip("/") + os.environ["PAGES_BASE"]
+
+          # A satellite basemap, not a road map. Every layer this tool draws is
+          # evidence about vegetation, and a cartographic basemap gives a
+          # verifier nothing to check it against. Imagery does: a classified
+          # cell either sits on a cutblock or it does not.
+          #
+          # Esri World Imagery is anonymous, sends CORS, and is the same
+          # archive the dated Wayback timeline in section 7 steps through, so
+          # the basemap and the timeline agree on what the ground looks like.
+          satellite = {
+              "version": 8,
+              "sources": {
+                  "esri-world-imagery": {
+                      "type": "raster",
+                      "tiles": [
+                          "https://services.arcgisonline.com/ArcGIS/rest/services"
+                          "/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                      ],
+                      "tileSize": 256,
+                      "maxzoom": 19,
+                      "attribution": (
+                          "Esri, Maxar, Earthstar Geographics, and the GIS User "
+                          "Community"
+                      ),
+                  }
+              },
+              "layers": [
+                  {
+                      "id": "esri-world-imagery",
+                      "type": "raster",
+                      "source": "esri-world-imagery",
+                  }
+              ],
+          }
+          style = dist / "satellite-basemap.json"
+          style.write_text(json.dumps(satellite, indent=2) + "\n")
+
+          project = {
+              "version": "1.0.0",
+              "name": "Disturbance Check",
+              "mapView": {
+                  "center": [-98.5, 39.8],
+                  "zoom": 3,
+                  "bearing": 0,
+                  "pitch": 0,
+              },
+              "basemapStyleUrl": f"{site}satellite-basemap.json",
+              "layers": [],
+              "styles": {},
+              "plugins": {
+                  "manifestUrls": [],
+                  "activePluginIds": [plugin_id],
+                  "mapControlPositions": {},
+                  "settings": {},
+              },
+          }
+          startup = dist / "disturbance-check.geolibre.json"
+          startup.write_text(json.dumps(project, indent=2) + "\n")
+
+          snippet = (
+              "<script>(function(){"
+              "var u=new URL(window.location.href);"
+              "var changed=false;"
+              "if(!u.searchParams.has('theme')){"
+              "u.searchParams.set('theme','dark');"
+              "document.documentElement.classList.add('dark');"
+              "document.documentElement.style.colorScheme='dark';"
+              "changed=true;}"
+              "var hasProject=['url','project','projectUrl','project_url']"
+              ".some(function(k){return u.searchParams.has(k);});"
+              "if(!hasProject&&!/^\\?https?:/i.test(u.search)){"
+              "u.searchParams.set('project',"
+              "new URL('disturbance-check.geolibre.json',"
+              "document.baseURI).href);"
+              "changed=true;}"
+              "if(changed){window.history.replaceState(null,'',u);}"
+              "})();</script>"
+          )
+
+          page = dist / "index.html"
+          html = page.read_text()
+          if "disturbance-check.geolibre.json" in html:
+              raise SystemExit("the startup snippet is already present")
+          if "<head>" not in html:
+              raise SystemExit("no <head> in the built index.html")
+          page.write_text(html.replace("<head>", "<head>" + snippet, 1))
+          print("startup project written and snippet injected")
+          PYTHON
+
+      - name: Disable Jekyll processing
+        run: touch geolibre/apps/geolibre-desktop/dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: geolibre/apps/geolibre-desktop/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

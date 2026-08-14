@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "project": "Claybelt (sample)",
+  "client": "Anew (BlueSource)",
+  "boundary": null,
+  "boundaryAreaHa": 52096.3,
+  "periods": [
+    {
+      "id": "RP1",
+      "preStart": "2023-11-01",
+      "preEnd": "2024-02-01",
+      "postStart": "2025-11-01",
+      "postEnd": "2026-02-01",
+      "layers": [
+        {
+          "id": "dNDVI",
+          "label": "dNDVI - canopy loss",
+          "breaks": {
+            "low": 0.15,
+            "moderate": 0.2,
+            "high": 0.3
+          },
+          "areasHa": [
+            1240.5,
+            318.2,
+            402.7
+          ],
+          "justification": "Histogram bimodal with the noise bulk ending near 0.13; Low raised from the SOP default of 0.10 to sit in the gap.",
+          "cog": "RP1-dNDVI.tif"
+        },
+        {
+          "id": "dNDMI",
+          "label": "dNDMI - moisture stress",
+          "breaks": {
+            "low": 0.05,
+            "moderate": 0.15,
+            "high": 0.25
+          },
+          "areasHa": [
+            880.1,
+            210.4,
+            96
+          ],
+          "justification": "Dormant-season windows inflate dNDMI; breaks lowered per SOP operational note.",
+          "cog": "RP1-dNDMI.tif"
+        },
+        {
+          "id": "dNBR",
+          "label": "dNBR - burn severity",
+          "breaks": {
+            "low": 0.1,
+            "moderate": 0.27,
+            "high": 0.44
+          },
+          "areasHa": [
+            12.1,
+            0,
+            0
+          ],
+          "justification": null,
+          "cog": "RP1-dNBR.tif"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "script": "TUVSUD_Anew_Claybelt_RP1_DisturbanceCheck_NDVI-NDBR-NDMI-QGIS_CLIP.py",
+    "collection": "COPERNICUS/S2_SR_HARMONIZED",
+    "cloudRemoval": "Cloud Score+ (GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED), cs >= 0.40, qualityMosaic",
+    "scale": 10,
+    "runDate": "2026-08-14",
+    "analyst": "TUV SUD Green Energy & Sustainability"
+  },
+  "warnings": [
+    "Pre and post windows fall in the dormant season, which inflates dNDMI extent."
+  ],
+  "sample": true
+}

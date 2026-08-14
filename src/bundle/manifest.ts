@@ -70,6 +70,14 @@ export interface Bundle {
   /** Format version, so an older app refuses a newer bundle rather than
    * misreading it. */
   version: 1;
+  /**
+   * True for demonstration data.
+   *
+   * A viewer showing invented disturbance looks exactly like one showing a
+   * real delivery, so the distinction cannot be left to the file name. The
+   * panel refuses to present a sample bundle without saying so.
+   */
+  sample?: boolean;
   project: string;
   client: string;
   /** The project boundary the analysis was clipped to, as GeoJSON. Drawn on
