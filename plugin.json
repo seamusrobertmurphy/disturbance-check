@@ -1,0 +1,8 @@
+{
+  "id": "tuvsud-disturbance-check",
+  "name": "Disturbance Check",
+  "version": "0.1.0",
+  "description": "Delivered canopy disturbance layers with the public record they were checked against.",
+  "entry": "dist/index.js",
+  "style": "dist/style.css"
+}
