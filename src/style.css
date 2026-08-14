@@ -939,3 +939,24 @@ select.dc-input {
   border: 1px solid rgba(128, 128, 128, 0.4);
   flex: none;
 }
+
+/* Provenance rows: label and value on one line, separated. Without this the
+   two spans butt together and read as "Pixel size10 m". */
+.dc-prov { display: flex; gap: 6px; align-items: baseline; font-size: 12px; padding: 2px 0; }
+.dc-prov-label { opacity: 0.7; flex: none; }
+.dc-prov-value { word-break: break-word; }
+.dc-section { margin-bottom: 16px; }
+.dc-section-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; opacity: 0.75; margin: 0 0 8px; }
+.dc-layer { border: 1px solid var(--dc-border, rgba(128,128,128,0.3)); border-radius: 6px;
+  padding: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
+.dc-layer-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.dc-layer-name { font-weight: 600; }
+.dc-layer-total { font-variant-numeric: tabular-nums; opacity: 0.85; }
+.dc-layer-breaks { font-size: 11px; opacity: 0.75; }
+.dc-context { border: 1px solid var(--dc-border, rgba(128,128,128,0.3)); border-radius: 6px;
+  padding: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
+.dc-context-label { font-weight: 600; }
+.dc-context-loaded { font-size: 11px; opacity: 0.8; }
+.dc-period { font-size: 12px; padding: 2px 0; }
+.dc-kv { font-weight: 600; margin-bottom: 4px; }

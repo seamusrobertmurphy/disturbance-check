@@ -18,6 +18,30 @@ import {
   pickFile,
   type ImportedVector,
 } from "../vector/import";
+import {
+  IDS_ATTRIBUTION,
+  MTBS_ATTRIBUTION,
+  coverageFor,
+  fireEvidence,
+  insectAndDisease,
+  managementRecord,
+  yearsCovered,
+} from "../reference/corroborate";
+import { FACTS_ATTRIBUTION } from "../reference/management";
+import { LCMS_PRODUCTS, exportOverlay, withinConus } from "../reference/lcms";
+import {
+  LANDFIRE_ATTRIBUTION,
+  loadCatalogue,
+  overlayFor,
+  regionFor,
+  serviceFor,
+} from "../reference/landfire";
+import {
+  WAYBACK_ATTRIBUTION,
+  distinctLooks,
+  loadReleases,
+  type Look,
+} from "../reference/wayback";
 import type { GeoLibreAppAPI } from "../types/geolibre";
 import { button, clear, el, formatHectares } from "./dom";
 
@@ -73,6 +97,14 @@ interface State {
   shown: Set<string>;
   context: Partial<Record<VectorRole, LoadedContext>>;
   busy: string | null;
+  record: {
+    status: "idle" | "loading" | "ready" | "error";
+    fires: Awaited<ReturnType<typeof fireEvidence>> | null;
+    ids: Awaited<ReturnType<typeof insectAndDisease>> | null;
+    management: Awaited<ReturnType<typeof managementRecord>> | null;
+    error: string | null;
+  };
+  looks: { status: "idle" | "loading" | "ready" | "error"; items: Look[]; active: string | null; error: string | null };
 }
 
 export class ClientPanel {
@@ -86,6 +118,8 @@ export class ClientPanel {
     shown: new Set(),
     context: {},
     busy: null,
+    record: { status: "idle", fires: null, ids: null, management: null, error: null },
+    looks: { status: "idle", items: [], active: null, error: null },
   };
 
   constructor(app: GeoLibreAppAPI) {
@@ -224,6 +258,8 @@ export class ClientPanel {
     this.container.appendChild(this.renderAssessment(this.state.bundle));
     this.container.appendChild(this.renderLayers(this.state.bundle));
     this.container.appendChild(this.renderSiteData());
+    this.container.appendChild(this.renderPublicRecord());
+    this.container.appendChild(this.renderImagery());
     this.container.appendChild(this.renderProvenance(this.state.bundle));
   }
 
@@ -416,6 +452,297 @@ export class ClientPanel {
     }
   }
 
+  /** Lon/lat bounds of the delivered layers, which every public overlay is
+   * requested over. Falls back to the first raster read. */
+  private extent(): [number, number, number, number] | null {
+    const first = this.state.rasters.values().next().value as
+      | RasterLayer
+      | undefined;
+    return first ? first.bounds : null;
+  }
+
+  // The public record ------------------------------------------------------
+
+  private renderPublicRecord(): HTMLElement {
+    const body = el("div", "dc-stack");
+    const bbox = this.extent();
+
+    if (!bbox) {
+      body.appendChild(
+        el("p", "dc-hint", "Show a disturbance layer first, so the record can be searched over the same area."),
+      );
+      return this.section("Public disturbance record", body);
+    }
+
+    const coverage = coverageFor(bbox);
+    if (coverage.none) {
+      body.appendChild(
+        this.notice(
+          "info",
+          "Outside these registries",
+          "The fire and forest health registries cover the United States and Canada. This project is outside both, so there is nothing to query. That is a gap in coverage, not an absence of disturbance.",
+        ),
+      );
+      return this.section("Public disturbance record", body);
+    }
+
+    const record = this.state.record;
+    if (record.status === "idle") {
+      body.appendChild(
+        el("p", "dc-hint", "Independent records of fire, insect and disease damage and recorded management over this project, from public agency data."),
+      );
+      body.appendChild(button("Search the record", () => void this.fetchRecord(), "primary"));
+      return this.section("Public disturbance record", body);
+    }
+    if (record.status === "loading") {
+      body.appendChild(el("p", "dc-hint", "Querying the public record."));
+      return this.section("Public disturbance record", body);
+    }
+    if (record.status === "error") {
+      body.appendChild(this.notice("warning", "The record could not be read", record.error ?? "Unavailable."));
+      body.appendChild(button("Try again", () => void this.fetchRecord(), "secondary"));
+      return this.section("Public disturbance record", body);
+    }
+
+    const fires = record.fires;
+    body.appendChild(el("div", "dc-subhead", "Mapped fire"));
+    if (!fires || fires.records.length === 0) {
+      body.appendChild(el("p", "dc-hint", `No mapped fire intersects this project, according to ${fires?.sources.join(", ") || "the registries that answered"}.`));
+    } else {
+      for (const fire of fires.records) {
+        const row = el("div", "dc-look");
+        const head = el("div", "dc-look-head");
+        head.appendChild(el("span", "dc-look-date", fire.name));
+        head.appendChild(el("span", "dc-look-tag", String(fire.year)));
+        head.appendChild(el("span", "dc-look-tag", fire.source));
+        row.appendChild(head);
+        row.appendChild(el("div", "dc-look-meta", [
+          `${formatHectares(fire.hectares)} ha`,
+          fire.started ? `from ${fire.started}` : null,
+          fire.cause,
+        ].filter(Boolean).join(" · ")));
+        body.appendChild(row);
+      }
+      body.appendChild(button("Show perimeters", () => this.showPerimeters(), "secondary"));
+    }
+
+    const ids = record.ids;
+    body.appendChild(el("div", "dc-subhead", "Insect and disease survey"));
+    if (!ids?.covered) {
+      body.appendChild(el("p", "dc-hint", "Not surveyed here. The aerial survey is a United States programme."));
+    } else if (ids.groups.length === 0) {
+      body.appendChild(el("p", "dc-hint", "No damage recorded over this project in these years."));
+    } else {
+      const table = el("div", "dc-damage");
+      for (const group of ids.groups.slice(0, 10)) {
+        const row = el("div", "dc-damage-row");
+        row.appendChild(el("span", "dc-damage-year", String(group.year)));
+        row.appendChild(el("span", "dc-damage-agent", group.agent));
+        row.appendChild(el("span", "dc-damage-type", group.damageType));
+        row.appendChild(el("span", "dc-damage-acres", `${Math.round(group.acres).toLocaleString()} ac`));
+        table.appendChild(row);
+      }
+      body.appendChild(table);
+    }
+
+    const management = record.management;
+    if (management) {
+      body.appendChild(el("div", "dc-subhead", "Recorded management"));
+      if (management.activities.length === 0) {
+        body.appendChild(el("p", "dc-hint", "No canopy-affecting activity recorded. The activity tracking system covers National Forest System land only, so on private or state ownership this is an absence of jurisdiction rather than of harvest."));
+      } else {
+        const table = el("div", "dc-damage");
+        for (const activity of management.activities.slice(0, 10)) {
+          const row = el("div", "dc-damage-row");
+          row.appendChild(el("span", "dc-damage-year", (activity.completed ?? "").slice(0, 4)));
+          row.appendChild(el("span", "dc-damage-agent", activity.activity));
+          row.appendChild(el("span", "dc-damage-type", activity.completed ?? ""));
+          row.appendChild(el("span", "dc-damage-acres", `${Math.round(activity.acres).toLocaleString()} ac`));
+          table.appendChild(row);
+        }
+        body.appendChild(table);
+      }
+    }
+
+    if (withinConus(bbox)) {
+      body.appendChild(el("div", "dc-subhead", "Independent change models"));
+      body.appendChild(el("p", "dc-hint", "Built from the same satellite record by unrelated methods. Agreement corroborates the delivered layers; disagreement is worth asking about."));
+      const row = el("div", "dc-row");
+      for (const product of LCMS_PRODUCTS) {
+        row.appendChild(button(product.label, () => void this.showLcms(product.id), "secondary"));
+      }
+      if (regionFor(bbox)) {
+        row.appendChild(button("Disturbance cause", () => void this.showLandfire(), "secondary"));
+      }
+      body.appendChild(row);
+    }
+
+    body.appendChild(el("p", "dc-hint", [MTBS_ATTRIBUTION, IDS_ATTRIBUTION, management ? FACTS_ATTRIBUTION : null, regionFor(bbox) ? LANDFIRE_ATTRIBUTION : null].filter(Boolean).join(". ") + "."));
+    return this.section("Public disturbance record", body);
+  }
+
+  private async fetchRecord(): Promise<void> {
+    const bbox = this.extent();
+    const bundle = this.state.bundle;
+    if (!bbox || !bundle) return;
+    this.patch({ record: { ...this.state.record, status: "loading", error: null } });
+    try {
+      const years = yearsCovered(bundle.periods);
+      const [ids, fires, management] = await Promise.all([
+        insectAndDisease(bbox, years),
+        fireEvidence(bbox, years),
+        managementRecord(bbox, years),
+      ]);
+      this.patch({ record: { status: "ready", ids, fires, management, error: null } });
+    } catch (error) {
+      this.patch({ record: { ...this.state.record, status: "error", error: describeError(error) } });
+    }
+  }
+
+  private showPerimeters(): void {
+    const fires = this.state.record.fires;
+    if (!fires || fires.perimeters.features.length === 0) return;
+    this.layers.addVector({
+      key: "record-fire",
+      name: "Mapped fire perimeters",
+      geojson: fires.perimeters,
+      role: "fire",
+      labelField: null,
+      color: CONTEXT_META.fire.colour,
+    });
+  }
+
+  private async showLcms(productId: string): Promise<void> {
+    const bbox = this.extent();
+    const period = this.state.bundle?.periods[0];
+    const product = LCMS_PRODUCTS.find((entry) => entry.id === productId);
+    if (!bbox || !period || !product) return;
+    try {
+      const overlay = await exportOverlay({
+        product,
+        year: Number(period.postEnd.slice(0, 4)),
+        bbox,
+      });
+      this.layers.addRaster({
+        key: "record-lcms",
+        name: `LCMS ${product.label}`,
+        dataUrl: overlay.url,
+        coordinates: overlay.coordinates,
+        visible: true,
+        opacity: 0.75,
+      });
+    } catch (error) {
+      this.patch({ error: describeError(error) });
+    }
+  }
+
+  private async showLandfire(): Promise<void> {
+    const bbox = this.extent();
+    const period = this.state.bundle?.periods[0];
+    const region = bbox ? regionFor(bbox) : null;
+    if (!bbox || !period || !region) return;
+    try {
+      const catalogue = await loadCatalogue();
+      const service = serviceFor(catalogue, Number(period.postEnd.slice(0, 4)), region);
+      if (!service) {
+        this.patch({ error: "LANDFIRE has not published a disturbance product for that year yet." });
+        return;
+      }
+      const overlay = await overlayFor(bbox, service);
+      this.layers.addRaster({
+        key: "record-landfire",
+        name: `LANDFIRE disturbance ${service.year}`,
+        dataUrl: overlay.url,
+        coordinates: overlay.coordinates,
+        visible: true,
+        opacity: 0.8,
+      });
+    } catch (error) {
+      this.patch({ error: describeError(error) });
+    }
+  }
+
+  // Dated imagery ----------------------------------------------------------
+
+  private renderImagery(): HTMLElement {
+    const body = el("div", "dc-stack");
+    const bbox = this.extent();
+    if (!bbox) {
+      body.appendChild(el("p", "dc-hint", "Show a disturbance layer first."));
+      return this.section("High-resolution imagery", body);
+    }
+
+    const looks = this.state.looks;
+    if (looks.status === "idle") {
+      body.appendChild(el("p", "dc-hint", "Every distinct high-resolution photograph of this project in Esri's dated archive, often sub-metre. Sentinel-2 says an index moved; this shows what the ground is."));
+      body.appendChild(button("Find available imagery", () => void this.findLooks(), "primary"));
+      return this.section("High-resolution imagery", body);
+    }
+    if (looks.status === "loading") {
+      body.appendChild(el("p", "dc-hint", "Reading capture dates, around twenty seconds."));
+      return this.section("High-resolution imagery", body);
+    }
+    if (looks.status === "error") {
+      body.appendChild(this.notice("warning", "The archive could not be read", looks.error ?? "Unavailable."));
+      return this.section("High-resolution imagery", body);
+    }
+    if (looks.items.length === 0) {
+      body.appendChild(this.notice("warning", "No high-resolution imagery here", "The archive holds no dated capture over this project."));
+      return this.section("High-resolution imagery", body);
+    }
+
+    for (const look of looks.items) {
+      const row = el("div", "dc-look");
+      const head = el("div", "dc-look-head");
+      head.appendChild(el("span", "dc-look-date", look.capture.captureDate ?? "undated"));
+      row.appendChild(head);
+      row.appendChild(el("div", "dc-look-meta", [
+        look.capture.resolution ? `${look.capture.resolution} m` : null,
+        look.capture.source,
+        look.capture.provider,
+      ].filter(Boolean).join(" · ")));
+      row.appendChild(button(
+        looks.active === look.capture.captureDate ? "Hide" : "Show",
+        () => this.toggleLook(look),
+        looks.active === look.capture.captureDate ? "primary" : "secondary",
+      ));
+      body.appendChild(row);
+    }
+    body.appendChild(el("p", "dc-hint", `Dates are capture dates read from the archive's own metadata at this location, not release dates. ${WAYBACK_ATTRIBUTION}.`));
+    return this.section("High-resolution imagery", body);
+  }
+
+  private async findLooks(): Promise<void> {
+    const bbox = this.extent();
+    if (!bbox) return;
+    this.patch({ looks: { ...this.state.looks, status: "loading", error: null } });
+    try {
+      const releases = await loadReleases();
+      const items = await distinctLooks(releases, (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2);
+      this.patch({ looks: { status: "ready", items, active: null, error: null } });
+    } catch (error) {
+      this.patch({ looks: { ...this.state.looks, status: "error", error: describeError(error) } });
+    }
+  }
+
+  private toggleLook(look: Look): void {
+    const key = "record-wayback";
+    if (this.state.looks.active === look.capture.captureDate) {
+      this.layers.remove(`tuvsud-dc-${key}`);
+      this.patch({ looks: { ...this.state.looks, active: null } });
+      return;
+    }
+    this.layers.addTiles({
+      key,
+      name: `Imagery ${look.capture.captureDate ?? look.release.releaseDate}`,
+      tileUrl: look.release.tileUrl,
+      attribution: WAYBACK_ATTRIBUTION,
+      visible: true,
+      maxzoom: 19,
+    });
+    this.patch({ looks: { ...this.state.looks, active: look.capture.captureDate } });
+  }
+
   private renderProvenance(bundle: Bundle): HTMLElement {
     const body = el("div", "dc-stack");
     const p = bundle.provenance;
@@ -429,8 +756,8 @@ export class ClientPanel {
     ];
     for (const [label, value] of rows) {
       const row = el("div", "dc-prov");
-      row.appendChild(el("span", "dc-prov-label", label));
-      row.appendChild(el("span", "dc-prov-value", value));
+      row.appendChild(el("span", "dc-prov-label", `${label}:`));
+      row.appendChild(el("span", "dc-prov-value", ` ${value}`));
       body.appendChild(row);
     }
     body.appendChild(
