@@ -1,0 +1,63 @@
+{
+  "_comment": [
+    "Everything the rasters cannot carry. prepare-bundle.mjs reads this, converts",
+    "the exports beside it to COGs, and fills in each layer's `cog` field itself.",
+    "",
+    "areasHa is [Low, Moderate, High] in hectares and must be measured, not",
+    "asserted. Run `python3 scripts/class-areas.py <export-dir> --json` and paste",
+    "what it prints: it reads the delivered rasters, which is what the client's",
+    "browser draws.",
+    "",
+    "justification may be null, but the viewer then prints that the figures",
+    "cannot be read as SOP-compliant until one is supplied. Write what the",
+    "histogram actually showed.",
+    "",
+    "Set sample to true only for a demonstration bundle carrying invented data.",
+    "A delivered bundle must omit it or set it false."
+  ],
+  "project": "Project name as the client writes it",
+  "client": "Client name (developer)",
+  "boundary": null,
+  "boundaryAreaHa": 0,
+  "periods": [
+    {
+      "id": "RP1",
+      "preStart": "2023-07-01",
+      "preEnd": "2023-08-31",
+      "postStart": "2024-07-01",
+      "postEnd": "2024-08-31",
+      "layers": [
+        {
+          "id": "dNDVI",
+          "label": "dNDVI - canopy loss",
+          "breaks": { "low": 0.1, "moderate": 0.2, "high": 0.35 },
+          "areasHa": [0, 0, 0],
+          "justification": null
+        },
+        {
+          "id": "dNDMI",
+          "label": "dNDMI - moisture stress",
+          "breaks": { "low": 0.15, "moderate": 0.3, "high": 0.45 },
+          "areasHa": [0, 0, 0],
+          "justification": null
+        },
+        {
+          "id": "dNBR",
+          "label": "dNBR - burn severity",
+          "breaks": { "low": 0.1, "moderate": 0.27, "high": 0.44 },
+          "areasHa": [0, 0, 0],
+          "justification": null
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "script": "name of the Earth Engine script that produced the exports",
+    "collection": "COPERNICUS/S2_SR_HARMONIZED",
+    "cloudRemoval": "Cloud Score+ (GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED), cs_cdf >= 0.60, median",
+    "scale": 10,
+    "runDate": "YYYY-MM-DD",
+    "analyst": "TUV SUD Green Energy & Sustainability"
+  },
+  "warnings": []
+}

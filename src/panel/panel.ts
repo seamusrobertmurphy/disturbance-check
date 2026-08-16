@@ -3,6 +3,8 @@ import {
   CLASS_PALETTES,
   breaksDeviate,
   cogUrl,
+  expiryOf,
+  isRemote,
   loadBundle,
   totalFlaggedHa,
   type Bundle,
@@ -10,7 +12,7 @@ import {
   type DeliveredPeriod,
 } from "../bundle/manifest";
 import { paint, readLayer, type RasterLayer } from "../bundle/render";
-import { describeError } from "../errors";
+import { describeDeliveryError, describeError } from "../errors";
 import { MapLayerManager, type VectorRole } from "../map/layers";
 import {
   ACCEPTED_EXTENSIONS,
@@ -210,7 +212,16 @@ export class ClientPanel {
       this.state.shown.add(key);
       this.patch({ busy: null });
     } catch (error) {
-      this.patch({ busy: null, error: describeError(error) });
+      this.patch({
+        busy: null,
+        error: describeDeliveryError(
+          error,
+          { remote: isRemote(layer) },
+          this.state.bundle
+            ? expiryOf(this.state.bundle)
+            : { on: null, expired: false },
+        ),
+      });
     }
   }
 
@@ -252,6 +263,24 @@ export class ClientPanel {
           "warning",
           "Sample data, not a delivery",
           "These layers are placeholders used to demonstrate the viewer. The disturbance shown is invented and must not be read, cited or reported.",
+        ),
+      );
+    }
+    const expiry = expiryOf(this.state.bundle);
+    if (expiry.expired) {
+      this.container.appendChild(
+        this.notice(
+          "warning",
+          "This delivery has expired",
+          `The rasters were held until ${expiry.on} and have since been deleted, so no layer will draw. Everything below still describes what was produced. Ask for a re-run to have the layers republished.`,
+        ),
+      );
+    } else if (expiry.daysLeft !== null && expiry.daysLeft <= 2) {
+      this.container.appendChild(
+        this.notice(
+          "warning",
+          "Expires shortly",
+          `These layers are held until ${expiry.on}, ${expiry.daysLeft === 0 ? "today" : `${expiry.daysLeft} day${expiry.daysLeft === 1 ? "" : "s"} from now`}. After that they stop drawing until they are republished.`,
         ),
       );
     }
@@ -754,6 +783,13 @@ export class ClientPanel {
       ["Run", p.runDate],
       ["Analyst", p.analyst],
     ];
+    const expiry = expiryOf(bundle);
+    if (expiry.on) {
+      rows.push([
+        "Layers held until",
+        expiry.expired ? `${expiry.on} (expired)` : expiry.on,
+      ]);
+    }
     for (const [label, value] of rows) {
       const row = el("div", "dc-prov");
       row.appendChild(el("span", "dc-prov-label", `${label}:`));

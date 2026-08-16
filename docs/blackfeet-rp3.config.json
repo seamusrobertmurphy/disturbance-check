@@ -1,0 +1,56 @@
+{
+  "_comment": [
+    "Blackfeet RP3 bundle config. Names and dates are read from the ACR782",
+    "Monitoring Report dated 21 January 2026, Sections I and II.",
+    "",
+    "Fed to scripts/build-bundle.py, which finds the scenes, reads the pixels",
+    "from AWS Open Data, masks cloud with the segmentation model, composites,",
+    "differences, classifies, writes the layers and measures their areas off",
+    "the rasters it wrote. Nothing here asserts a hectare figure.",
+    "",
+    "justification is null on all three layers. Until each carries one sentence",
+    "drawn from its histogram, the viewer prints that these figures cannot be",
+    "read as SOP-compliant, because SOP Step 6 requires a deviation to be",
+    "documented and a default to be shown to be a default.",
+    "",
+    "The period dates below are the windows that are differenced, not the",
+    "reporting period. RP3 itself runs 2024-11-16 to 2025-11-15; these windows",
+    "close before it opens. See the warning at the foot of this file."
+  ],
+  "project": "ILTF/NICC & Blackfeet Indian Nation Forest Carbon Project (ACR782), RP3",
+  "client": "Indian Land Tenure Foundation (ILTF)",
+  "roi": [-113.9859, 48.0371, -112.4125, 49.1687],
+  "boundary": null,
+  "boundaryAreaHa": null,
+  "labels": {
+    "dNDVI": "dNDVI - canopy loss",
+    "dNDMI": "dNDMI - moisture stress",
+    "dNBR": "dNBR - burn severity"
+  },
+  "periods": [
+    {
+      "id": "RP3",
+      "preStart": "2023-07-01",
+      "preEnd": "2023-08-31",
+      "postStart": "2024-07-01",
+      "postEnd": "2024-08-31",
+      "breaksByDelta": {
+        "dNDVI": { "low": 0.1, "moderate": 0.2, "high": 0.35 },
+        "dNDMI": { "low": 0.15, "moderate": 0.3, "high": 0.45 },
+        "dNBR": { "low": 0.1, "moderate": 0.27, "high": 0.44 }
+      },
+      "justifications": {
+        "dNDVI": null,
+        "dNDMI": null,
+        "dNBR": null
+      }
+    }
+  ],
+  "provenance": {
+    "analyst": "TUV SUD Green Energy & Sustainability"
+  },
+  "warnings": [
+    "The differenced windows are July to August 2023 against July to August 2024. RP3 runs 16 November 2024 to 15 November 2025, so these layers describe the year preceding the reporting period, not the reporting period itself.",
+    "Areas are reported over the project's bounding rectangle, not its boundary. Clip to the project shapefile before quoting hectares against the registry figure."
+  ]
+}

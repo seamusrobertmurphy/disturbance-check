@@ -1,78 +1,80 @@
 {
   "version": 1,
-  "project": "Claybelt (sample)",
-  "client": "Anew (BlueSource)",
+  "project": "ILTF/NICC & Blackfeet Indian Nation Forest Carbon Project (ACR782), RP3",
+  "client": "Indian Land Tenure Foundation (ILTF)",
   "boundary": null,
-  "boundaryAreaHa": 52096.3,
+  "boundaryAreaHa": null,
+  "analysedAreaHa": 1184516.6,
   "periods": [
     {
-      "id": "RP1",
-      "preStart": "2023-11-01",
-      "preEnd": "2024-02-01",
-      "postStart": "2025-11-01",
-      "postEnd": "2026-02-01",
+      "id": "RP3",
+      "preStart": "2023-07-01",
+      "preEnd": "2023-08-31",
+      "postStart": "2024-07-01",
+      "postEnd": "2024-08-31",
       "layers": [
         {
           "id": "dNDVI",
           "label": "dNDVI - canopy loss",
+          "cog": "RP3-dNDVI.tif",
           "breaks": {
-            "low": 0.15,
+            "low": 0.1,
             "moderate": 0.2,
-            "high": 0.3
+            "high": 0.35
           },
           "areasHa": [
-            1240.5,
-            318.2,
-            402.7
+            10437.1,
+            4786.6,
+            3617.2
           ],
-          "justification": "Histogram bimodal with the noise bulk ending near 0.13; Low raised from the SOP default of 0.10 to sit in the gap.",
-          "cog": "RP1-dNDVI.tif"
+          "justification": null
         },
         {
           "id": "dNDMI",
           "label": "dNDMI - moisture stress",
+          "cog": "RP3-dNDMI.tif",
           "breaks": {
-            "low": 0.05,
-            "moderate": 0.15,
-            "high": 0.25
+            "low": 0.15,
+            "moderate": 0.3,
+            "high": 0.45
           },
           "areasHa": [
-            880.1,
-            210.4,
-            96
+            10541.1,
+            4815.6,
+            3164.8
           ],
-          "justification": "Dormant-season windows inflate dNDMI; breaks lowered per SOP operational note.",
-          "cog": "RP1-dNDMI.tif"
+          "justification": null
         },
         {
           "id": "dNBR",
           "label": "dNBR - burn severity",
+          "cog": "RP3-dNBR.tif",
           "breaks": {
             "low": 0.1,
             "moderate": 0.27,
             "high": 0.44
           },
           "areasHa": [
-            12.1,
-            0,
-            0
+            139390.2,
+            19006.0,
+            8020.0
           ],
-          "justification": null,
-          "cog": "RP1-dNBR.tif"
+          "justification": null
         }
       ]
     }
   ],
   "provenance": {
-    "script": "TUVSUD_Anew_Claybelt_RP1_DisturbanceCheck_NDVI-NDBR-NDMI-QGIS_CLIP.py",
-    "collection": "COPERNICUS/S2_SR_HARMONIZED",
-    "cloudRemoval": "Cloud Score+ (GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED), cs >= 0.40, qualityMosaic",
-    "scale": 10,
-    "runDate": "2026-08-14",
+    "script": "scripts/build-bundle.py",
+    "collection": "sentinel-2-l2a (Sentinel-2 L2A COGs on AWS Open Data)",
+    "cloudRemoval": "OmniCloudMask v4 ensemble on red, green and B8A decided at 40 m; snow, saturated and no-data from the Sen2Cor scene classification",
+    "scale": 20,
+    "runDate": "2026-08-16",
     "analyst": "TUV SUD Green Energy & Sustainability"
   },
   "warnings": [
-    "Pre and post windows fall in the dormant season, which inflates dNDMI extent."
-  ],
-  "sample": true
+    "The differenced windows are July to August 2023 against July to August 2024. RP3 runs 16 November 2024 to 15 November 2025, so these layers describe the year preceding the reporting period, not the reporting period itself.",
+    "Areas are reported over the project's bounding rectangle, not its boundary. Clip to the project shapefile before quoting hectares against the registry figure.",
+    "RP3 dNBR flags 14.0 percent of the 1,184,517 ha analysed. A share that large over an area that is not wholly forest is more consistent with seasonal difference between the two windows than with disturbance. Clip to the project boundary and re-read the histogram before quoting it."
+  ]
 }

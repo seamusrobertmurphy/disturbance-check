@@ -88,6 +88,16 @@ export interface Bundle {
   provenance: Provenance;
   /** Warnings the run raised, carried through verbatim. */
   warnings: string[];
+  /**
+   * The day the rasters stop being readable, ISO, where they are held
+   * somewhere that expires them.
+   *
+   * Layers written to a Cloud Storage bucket under a lifecycle rule vanish on
+   * a schedule, and a client meeting a dead link deserves to be told the
+   * delivery expired rather than shown a network error. Absent when the
+   * rasters ship with the app and therefore last as long as it does.
+   */
+  expiresAt?: string;
 }
 
 /** SOP Step 6 defaults, for spotting a deviation the manifest failed to
@@ -157,9 +167,45 @@ export async function loadBundle(
   return bundle;
 }
 
-/** Absolute URL of a layer's raster. */
+/**
+ * Absolute URL of a layer's raster.
+ *
+ * `cog` is normally a file name beside the manifest, but an absolute URL is
+ * allowed and wins, which is what lets a delivery keep its rasters in a bucket
+ * rather than in the repository.
+ */
 export function cogUrl(baseUrl: string, layer: DeliveredLayer): string {
   return new URL(layer.cog, new URL(MANIFEST_PATH, baseUrl)).href;
+}
+
+/** True where a layer is streamed from somewhere other than this deployment. */
+export function isRemote(layer: DeliveredLayer): boolean {
+  return /^https?:\/\//i.test(layer.cog);
+}
+
+export interface Expiry {
+  /** The stated day, ISO, or null where the bundle names none. */
+  on: string | null;
+  /** Whole days remaining; negative once past. Null where none is stated. */
+  daysLeft: number | null;
+  expired: boolean;
+}
+
+/**
+ * How long the delivery has left.
+ *
+ * Compared by date rather than by instant. The bundle states a day, not a
+ * time, and a lifecycle rule deletes on its own schedule anyway, so claiming
+ * an hour would be false precision.
+ */
+export function expiryOf(bundle: Bundle, today = new Date()): Expiry {
+  if (!bundle.expiresAt) return { on: null, daysLeft: null, expired: false };
+  const day = 86_400_000;
+  const stated = Date.parse(`${bundle.expiresAt}T00:00:00Z`);
+  if (Number.isNaN(stated)) return { on: null, daysLeft: null, expired: false };
+  const now = Date.parse(`${today.toISOString().slice(0, 10)}T00:00:00Z`);
+  const daysLeft = Math.round((stated - now) / day);
+  return { on: bundle.expiresAt, daysLeft, expired: daysLeft < 0 };
 }
 
 /** Total hectares flagged across the three classes. */
