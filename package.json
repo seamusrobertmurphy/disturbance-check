@@ -1,6 +1,6 @@
 {
   "name": "tuvsud-disturbance-check",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Delivered Sentinel-2 canopy disturbance layers for ACR IFM verification, as a GeoLibre plugin.",
   "license": "MIT",
   "type": "module",
