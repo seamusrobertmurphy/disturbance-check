@@ -18,7 +18,7 @@ const teardown: Array<() => void> = [];
 const plugin: GeoLibrePlugin = {
   id: PANEL_ID,
   name: "Disturbance Check",
-  version: "0.1.0",
+  version: "0.2.0",
 
   activate(app: GeoLibreAppAPI) {
     panel = createPanel(app);

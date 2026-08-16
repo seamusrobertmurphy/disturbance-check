@@ -124,7 +124,10 @@ export class ClientPanel {
     looks: { status: "idle", items: [], active: null, error: null },
   };
 
+  private readonly app: GeoLibreAppAPI;
+
   constructor(app: GeoLibreAppAPI) {
+    this.app = app;
     this.layers = new MapLayerManager(app);
   }
 
@@ -161,10 +164,33 @@ export class ClientPanel {
       // reasonably wonder whether anything had loaded.
       const first = bundle.periods[0];
       const primary = first?.layers.find((layer) => layer.id === "dNDVI");
-      if (first && primary) await this.toggleLayer(first, primary);
+      if (first && primary) {
+        await this.toggleLayer(first, primary);
+        // And move to it. A delivery opens on a world map, and the layer it
+        // exists to show is a few pixels somewhere in Montana: a client would
+        // have to know where the project is before they could see the result.
+        // The boundary, where one is supplied, is the better frame; the
+        // raster's own extent is the fallback, and it is always there.
+        this.frame(this.state.rasters.get(this.layerKey(first, primary))?.bounds);
+      }
       if (bundle.boundary) this.drawBoundary(bundle);
     } catch (error) {
       this.patch({ status: "error", error: describeError(error) });
+    }
+  }
+
+  /**
+   * Move the map to the delivery's extent.
+   *
+   * Optional in the host API, so a host that does not offer it simply leaves
+   * the view where it was rather than failing to open the panel.
+   */
+  private frame(bounds?: [number, number, number, number]): void {
+    if (!bounds) return;
+    try {
+      this.app.fitBounds?.(bounds);
+    } catch {
+      // A host that refuses to move is not a reason to lose the layer.
     }
   }
 
