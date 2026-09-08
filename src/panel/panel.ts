@@ -118,6 +118,12 @@ interface State {
  */
 const OPEN_SECTIONS_KEY = "disturbance.viewer.openSections";
 
+/** How long any one registry gets before it is given up on. */
+const RECORD_TIMEOUT = 90_000;
+
+/** How long to wait before asking a registry a second time. */
+const RETRY_PAUSE = 1_500;
+
 export class ClientPanel {
   private container: HTMLElement | null = null;
   private readonly layers: MapLayerManager;
@@ -704,17 +710,67 @@ export class ClientPanel {
     const bundle = this.state.bundle;
     if (!bbox || !bundle) return;
     this.patch({ record: { ...this.state.record, status: "loading", error: null } });
-    try {
-      const years = yearsCovered(bundle.periods);
-      const [ids, fires, management] = await Promise.all([
-        insectAndDisease(bbox, years),
-        fireEvidence(bbox, years),
-        managementRecord(bbox, years),
-      ]);
-      this.patch({ record: { status: "ready", ids, fires, management, error: null } });
-    } catch (error) {
-      this.patch({ record: { ...this.state.record, status: "error", error: describeError(error) } });
+    const years = yearsCovered(bundle.periods);
+
+    // Each registry on its own clock, asked twice, and settled on its own.
+    //
+    // These are three unrelated government services under variable load:
+    // three identical insect-survey queries on 2026-09-08 came back in 447,
+    // 588 and 8,581 milliseconds. Gathering them with Promise.all meant one
+    // slow or briefly broken registry threw away the answers the other two had
+    // already returned and left the whole section reading as an error, which is
+    // the opposite of what a reader needs from a section whose purpose is to
+    // say whether the public record is silent. An abort is never retried,
+    // because it means the clock stopped the request on purpose.
+    const attempt = async <T>(run: (signal: AbortSignal) => Promise<T>) => {
+      try {
+        return await run(AbortSignal.timeout(RECORD_TIMEOUT));
+      } catch (error) {
+        if (error instanceof Error && error.name === "TimeoutError") throw error;
+        await new Promise((resolve) => window.setTimeout(resolve, RETRY_PAUSE));
+        return run(AbortSignal.timeout(RECORD_TIMEOUT));
+      }
+    };
+
+    const [idsResult, firesResult, managementResult] = await Promise.allSettled([
+      attempt((signal) => insectAndDisease(bbox, years, signal)),
+      attempt((signal) => fireEvidence(bbox, years, signal)),
+      attempt((signal) => managementRecord(bbox, years, signal)),
+    ]);
+
+    const failures = [
+      idsResult.status === "rejected"
+        ? `the aerial detection survey (${describeError(idsResult.reason)})`
+        : null,
+      firesResult.status === "rejected"
+        ? `the fire registries (${describeError(firesResult.reason)})`
+        : null,
+      managementResult.status === "rejected"
+        ? `the activity tracking record (${describeError(managementResult.reason)})`
+        : null,
+    ].filter((entry): entry is string => entry !== null);
+
+    if (failures.length === 3) {
+      this.patch({
+        record: {
+          ...this.state.record,
+          status: "error",
+          error: failures.join("; "),
+        },
+      });
+      return;
     }
+
+    this.patch({
+      record: {
+        status: "ready",
+        ids: idsResult.status === "fulfilled" ? idsResult.value : null,
+        fires: firesResult.status === "fulfilled" ? firesResult.value : null,
+        management:
+          managementResult.status === "fulfilled" ? managementResult.value : null,
+        error: failures.length > 0 ? failures.join("; ") : null,
+      },
+    });
   }
 
   private showPerimeters(): void {
