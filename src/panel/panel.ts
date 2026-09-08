@@ -109,6 +109,15 @@ interface State {
   looks: { status: "idle" | "loading" | "ready" | "error"; items: Look[]; active: string | null; error: string | null };
 }
 
+/**
+ * Which sections the reader has opened, for this tab only.
+ *
+ * Session rather than local storage, because a reader who opens the viewer
+ * fresh should meet it the way it was designed to be met, closed, rather than
+ * inheriting a shape they set on some other delivery weeks ago.
+ */
+const OPEN_SECTIONS_KEY = "disturbance.viewer.openSections";
+
 export class ClientPanel {
   private container: HTMLElement | null = null;
   private readonly layers: MapLayerManager;
@@ -126,9 +135,37 @@ export class ClientPanel {
 
   private readonly app: GeoLibreAppAPI;
 
+  /** Section ids currently expanded. Empty on a first visit, by design. */
+  private open: Set<string>;
+
   constructor(app: GeoLibreAppAPI) {
     this.app = app;
     this.layers = new MapLayerManager(app);
+    this.open = new Set(this.loadOpenSections());
+  }
+
+  private loadOpenSections(): string[] {
+    try {
+      const raw = window.sessionStorage.getItem(OPEN_SECTIONS_KEY);
+      if (raw) return JSON.parse(raw) as string[];
+    } catch {
+      // Fall through to the default.
+    }
+    // Everything closed. Six sections opened at once is a wall of text, and a
+    // reader meeting a delivery for the first time cannot tell which of them
+    // answers their question.
+    return [];
+  }
+
+  private saveOpenSections(): void {
+    try {
+      window.sessionStorage.setItem(
+        OPEN_SECTIONS_KEY,
+        JSON.stringify([...this.open]),
+      );
+    } catch {
+      // Session storage is optional.
+    }
   }
 
   mount(container: HTMLElement): void {
@@ -318,10 +355,36 @@ export class ClientPanel {
     this.container.appendChild(this.renderProvenance(this.state.bundle));
   }
 
+  /**
+   * A section the reader opens.
+   *
+   * The id is derived from the title rather than passed in, because several
+   * render paths return the same section from different branches and a
+   * threaded id would have to be repeated at every one of them.
+   */
   private section(title: string, body: HTMLElement): HTMLElement {
+    const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const isOpen = this.open.has(id);
+
     const wrapper = el("div", "dc-section");
-    wrapper.appendChild(el("div", "dc-section-title", title));
-    wrapper.appendChild(body);
+    const header = el("button", "dc-section-header");
+    header.type = "button";
+    header.setAttribute("aria-expanded", String(isOpen));
+    header.appendChild(el("span", "dc-section-caret", isOpen ? "\u25bc" : "\u25b6"));
+    header.appendChild(el("span", "dc-section-title", title));
+    header.addEventListener("click", () => {
+      if (this.open.has(id)) this.open.delete(id);
+      else this.open.add(id);
+      this.saveOpenSections();
+      this.render();
+    });
+    wrapper.appendChild(header);
+
+    if (isOpen) {
+      const shell = el("div", "dc-section-body");
+      shell.appendChild(body);
+      wrapper.appendChild(shell);
+    }
     return wrapper;
   }
 
