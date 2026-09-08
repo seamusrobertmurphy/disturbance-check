@@ -352,7 +352,8 @@ export async function fireEvidence(
     jobs.push(
       interagencyFires(bbox, years, signal)
         .then((found) => {
-          records.push(...found);
+          records.push(...found.records);
+          features.push(...found.perimeters);
           sources.push("NIFC");
         })
         .catch(() => {}),

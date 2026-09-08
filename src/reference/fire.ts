@@ -56,11 +56,17 @@ function epochToIso(value: unknown): string | null {
  * revisions. The result set over one project boundary is small enough that
  * filtering locally costs nothing.
  */
+export interface InteragencyFires {
+  records: FireRecord[];
+  /** The drawn perimeters, which the caller needs to put them on the map. */
+  perimeters: unknown[];
+}
+
 export async function interagencyFires(
   bbox: [number, number, number, number],
   years: number[],
   signal?: AbortSignal,
-): Promise<FireRecord[]> {
+): Promise<InteragencyFires> {
   const collection = await queryGeoJson(NIFC_PERIMETERS, {
     bbox,
     outFields: [
@@ -75,8 +81,17 @@ export async function interagencyFires(
     signal,
   });
 
+  // Keep the geometry, not just the row.
+  //
+  // This asked for the perimeters, read their attributes and threw the shapes
+  // away, so a fire found only in this feed produced a listed record and an
+  // empty feature collection. Show perimeters then returned without drawing
+  // anything, which reads as a broken button rather than as an absent shape,
+  // and the one thing a verifier wants from a mapped fire is where its edge
+  // falls against the classified raster.
   const wanted = new Set(years);
   const records: FireRecord[] = [];
+  const perimeters: unknown[] = [];
   for (const feature of collection.features) {
     const properties =
       (feature as { properties?: Record<string, unknown> }).properties ?? {};
@@ -93,8 +108,9 @@ export async function interagencyFires(
       ended: epochToIso(properties.attr_ContainmentDateTime),
       cause: (properties.attr_FireCause as string) ?? null,
     });
+    if ((feature as { geometry?: unknown }).geometry) perimeters.push(feature);
   }
-  return records;
+  return { records, perimeters };
 }
 
 // ---------------------------------------------------------------------------
