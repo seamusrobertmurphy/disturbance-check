@@ -105,10 +105,36 @@ const CWFIS_WFS = "https://cwfis.cfs.nrcan.gc.ca/geoserver/public/ows";
 export const NBAC_ATTRIBUTION =
   "National Burned Area Composite, Canadian Forest Service, Natural Resources Canada";
 
-/** Rough Canadian extent, lon/lat. */
+/**
+ * Rough Canadian extent, lon/lat, as boxes rather than one.
+ *
+ * A single box around Canada reaches from 41.6 degrees north, the latitude of
+ * Pelee Island in Lake Erie, to 83.2, across the whole longitude span of the
+ * continent. Every western state sits inside it, so an Oregon project tested
+ * true for Canada and every United States run also queried the Canadian
+ * burned area server. That cost a request to a host the run had no reason to
+ * touch, and worse, it put NBAC in the list of registries the panel reports as
+ * having answered, so a finding could cite the Canadian record as covering
+ * Oregon.
+ *
+ * These follow the border instead: the 49th parallel west of the Lake of the
+ * Woods, the Great Lakes through Ontario, the 45th across Quebec, and the
+ * Maritimes. Still deliberately generous, because a false positive costs one
+ * empty query and a false negative would hide real corroborating evidence.
+ */
+const CANADA_EXTENT: Array<[number, number, number, number]> = [
+  [-141.1, 48.9, -95.15, 83.2], // West of the Lake of the Woods, the 49th
+  [-95.15, 48.0, -84.0, 83.2], // Northwestern Ontario
+  [-84.0, 41.6, -74.3, 83.2], // Southern Ontario, which dips to Pelee Island
+  [-74.3, 44.9, -66.9, 83.2], // Quebec, largely the 45th parallel
+  [-69.1, 43.0, -52.6, 83.2], // The Maritimes and Newfoundland
+];
+
 export function withinCanada(bbox: [number, number, number, number]): boolean {
   const [west, south, east, north] = bbox;
-  return west < -52.6 && east > -141.1 && south < 83.2 && north > 41.6;
+  return CANADA_EXTENT.some(
+    ([w, s, e, n]) => west < e && east > w && south < n && north > s,
+  );
 }
 
 /**
