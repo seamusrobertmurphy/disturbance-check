@@ -35,8 +35,21 @@ const FS_ARCGIS = "https://apps.fs.usda.gov/arcx/rest/services/EDW";
 export const IDS_SERVICE = `${FS_ARCGIS}/EDW_InsectandDiseaseSurvey_01/MapServer`;
 export const MTBS_SERVICE = `${FS_ARCGIS}/EDW_MTBS_01/MapServer`;
 
-/** IDS AREAS. Layer 0 is the point survey, which is coarser and not used. */
+/**
+ * Both survey layers, because damage is mapped as either.
+ *
+ * An observer sketches a damaged stand as a polygon when it is large enough to
+ * draw and drops a point on it when it is not, so the two layers hold
+ * different occurrences rather than two views of the same ones. Reading only
+ * the polygons reported no forest health damage over ground the survey had
+ * recorded: over a 0.17 by 0.07 degree area of Oregon on 2026-09-08 the areas
+ * layer held two groups, both 2025, while the points layer held thirty-six
+ * observations across 2024 and 2025, Douglas-fir beetle, fir engraver and root
+ * disease, so a 2024 pre window read as clean when it was not. The R workflows
+ * these checks came from plotted both.
+ */
 export const IDS_AREAS_LAYER = 1;
+export const IDS_POINTS_LAYER = 0;
 
 export const IDS_ATTRIBUTION =
   "USDA Forest Service, Forest Health Protection, Insect and Disease Survey";
@@ -74,6 +87,10 @@ export interface DamageGroup {
   agent: string;
   acres: number;
   records: number;
+  /** Trees counted, which only the point survey records. */
+  trees: number;
+  /** Whether the observer drew the damage or dropped a point on it. */
+  mapping: "area" | "point";
 }
 
 export interface IdsSummary {
@@ -106,35 +123,71 @@ export async function insectAndDisease(
   }
   if (years.length === 0) return { covered: true, groups: [], totalAcres: 0 };
 
-  const rows = await queryStats(`${IDS_SERVICE}/${IDS_AREAS_LAYER}`, {
-    where: `survey_year >= ${Math.min(...years)} AND survey_year <= ${Math.max(...years)}`,
-    bbox,
-    groupBy: ["survey_year", "damage_type", "dca_common_name"],
-    statistics: [
-      {
-        statisticType: "sum",
-        onStatisticField: "acres",
-        outStatisticFieldName: "total_acres",
-      },
-      {
-        statisticType: "count",
-        onStatisticField: "objectid",
-        outStatisticFieldName: "records",
-      },
-    ],
-    signal,
-  });
+  const where = `survey_year >= ${Math.min(...years)} AND survey_year <= ${Math.max(
+    ...years,
+  )} `.trim();
+  const groupBy = ["survey_year", "damage_type", "dca_common_name"];
+  const acres = {
+    statisticType: "sum",
+    onStatisticField: "acres",
+    outStatisticFieldName: "total_acres",
+  } as const;
+  const count = {
+    statisticType: "count",
+    onStatisticField: "objectid",
+    outStatisticFieldName: "records",
+  } as const;
 
-  const groups: DamageGroup[] = rows
-    .map((row) => ({
+  // One layer being down must not read as no damage, so they settle apart and
+  // the caller is told when only one of the two was read.
+  const [areaRows, pointRows] = await Promise.all([
+    queryStats(`${IDS_SERVICE}/${IDS_AREAS_LAYER}`, {
+      where,
+      bbox,
+      groupBy,
+      statistics: [acres, count],
+      signal,
+    }),
+    queryStats(`${IDS_SERVICE}/${IDS_POINTS_LAYER}`, {
+      where,
+      bbox,
+      groupBy,
+      statistics: [
+        acres,
+        count,
+        {
+          statisticType: "sum",
+          onStatisticField: "tree_count",
+          outStatisticFieldName: "total_trees",
+        },
+      ],
+      signal,
+    }),
+  ]);
+
+  const read = (
+    rows: Array<Record<string, unknown>>,
+    mapping: DamageGroup["mapping"],
+  ): DamageGroup[] =>
+    rows.map((row) => ({
       year: Number(row.survey_year ?? 0),
       damageType: String(row.damage_type ?? "unrecorded"),
       agent: String(row.dca_common_name ?? "unknown"),
       acres: Number(row.total_acres ?? 0),
       records: Number(row.records ?? 0),
-    }))
-    .filter((group) => group.acres > 0)
-    .sort((a, b) => b.acres - a.acres);
+      trees: Number(row.total_trees ?? 0),
+      mapping,
+    }));
+
+  // A point occurrence is kept even where the survey entered no acreage,
+  // because a dropped point is the record that an observer saw damage there,
+  // and dropping it for want of an area would put the tool back where it was.
+  const groups = [
+    ...read(areaRows, "area").filter((group) => group.acres > 0),
+    ...read(pointRows, "point").filter(
+      (group) => group.records > 0 || group.acres > 0,
+    ),
+  ].sort((a, b) => b.acres - a.acres || b.records - a.records);
 
   return {
     covered: true,
